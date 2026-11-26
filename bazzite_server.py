@@ -2,87 +2,78 @@ from fastapi import FastAPI, WebSocket
 from starlette.websockets import WebSocketDisconnect
 import subprocess
 import asyncio
+import os
+import re
 from typing import List
 import psutil
-import requests
 
 last_status = None
 last_cpu_temp = None
 app = FastAPI()
 websocket_connections: List[WebSocket] = []
 
-def detect_steam_game_via_local_api():
-    try:
-        resp = requests.get('http://localhost:27060/clients/status.json', timeout=1)
-        data = resp.json()
-        players = data.get('players', [])
-        if players:
-            gameid = players[0].get('gameid')
-            if gameid and gameid != "0":
-                return gameid
-    except Exception as e:
-        print(f"Error querying Steam local API: {e}")
+STEAM_ROOTS = [
+    os.path.expanduser("~/.local/share/Steam"),
+    os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/Steam"),  # Flatpak Steam
+]
+appid_cache = {}
+
+
+def find_steam_appid():
+    """AppId of the Steam game currently launched, or None.
+    Steam starts every game via 'reaper SteamLaunch AppId=<id> ...'."""
+    for proc in psutil.process_iter(['cmdline']):
+        try:
+            cmd = proc.info['cmdline'] or []
+            if 'SteamLaunch' in cmd:
+                for arg in cmd:
+                    m = re.fullmatch(r'AppId=(\d+)', arg)
+                    if m:
+                        return m.group(1)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
     return None
 
-def get_app_name_from_steam_api(appid):
+
+def get_app_name(appid):
+    """Look up the game name from Steam's local app manifests."""
     if appid in appid_cache:
         return appid_cache[appid]
-    try:
-        url = f"https://store.steampowered.com/api/appdetails?appids={appid}"
-        resp = requests.get(url, timeout=2)
-        data = resp.json()
-        app_data = data.get(str(appid), {})
-        if app_data.get('success') and 'data' in app_data:
-            name = app_data['data'].get('name')
-            if name:
-                appid_cache[appid] = name
-                return name
-    except Exception as e:
-        print(f"Error querying Steam Web API: {e}")
+    libraries = list(STEAM_ROOTS)
+    for root in STEAM_ROOTS:
+        try:
+            with open(f"{root}/steamapps/libraryfolders.vdf") as f:
+                libraries += re.findall(r'"path"\s+"([^"]+)"', f.read())
+        except OSError:
+            pass
+    for lib in libraries:
+        try:
+            with open(f"{lib}/steamapps/appmanifest_{appid}.acf") as f:
+                m = re.search(r'"name"\s+"([^"]+)"', f.read())
+                if m:
+                    appid_cache[appid] = m.group(1)
+                    return m.group(1)
+        except OSError:
+            continue
     return f"SteamApp {appid}"
 
-def detect_running_game_process():
+
+def detect_running_game():
+    appid = find_steam_appid()
+    if appid:
+        return get_app_name(appid)
+
+    # Fallback: known emulators
     try:
-        # Get all processes
-        for proc in psutil.process_iter(['name', 'pid']):
-            if proc.info['name'] == 'steam':
-                steam_pid = proc.info['pid']
-                break
-        else:
-            steam_pid = None
-
-        # If Steam is running, check its children
-        if steam_pid:
-            steam_proc = psutil.Process(steam_pid)
-            children = steam_proc.children(recursive=True)
-            for child in children:
-                name = child.name().lower()
-                if name not in ["steamwebhelper", "steam"]:
-                    return name
-
-            # Fallback if only Steam is found
-            return "steam"
-
-        # Otherwise check for known emulators
         for proc in psutil.process_iter(['name']):
-            name = proc.info['name'].lower()
+            name = (proc.info['name'] or '').lower()
             if name in ["retroarch", "dolphin", "yuzu", "pcsx2"]:
                 return name
-
     except Exception as e:
         print(e)
 
     return "idle"
 
-def detect_running_game():
-    # First try Steam local API
-    appid = detect_steam_game_via_local_api()
-    if appid:
-        name = get_app_name_from_steam_api(appid)
-        return name
-
-    # Fallback
-    return detect_running_game_process()
 
 def get_cpu_temperature():
     try:
@@ -103,6 +94,7 @@ def get_cpu_temperature():
         print(e)
     return None
 
+
 @app.post("/command")
 async def post_command(command: dict):
     cmd = command.get("command")
@@ -111,6 +103,7 @@ async def post_command(command: dict):
     elif cmd == "sleep":
         subprocess.Popen(["systemctl", "suspend"])
     return {"result": "ok"}
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -137,6 +130,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if websocket in websocket_connections:
             websocket_connections.remove(websocket)
+
 
 async def game_monitor():
     global last_status, last_cpu_temp
@@ -176,9 +170,11 @@ async def game_monitor():
     except asyncio.CancelledError:
         print("game_monitor task was cancelled, exiting cleanly.")
 
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(game_monitor())
+
 
 @app.get("/")
 async def root():

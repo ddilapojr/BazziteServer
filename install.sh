@@ -8,11 +8,13 @@ echo "-- Bazzite Integration Server Installer --"
 cd "$(dirname "$0")"
 
 echo "Creating virtual environment"
+rm -rf venv
 python3 -m venv venv
 source venv/bin/activate
 
 echo "Installing Python dependencies"
-pip install -r requirements.txt
+pip install --upgrade pip
+pip install --only-binary=:all: -r requirements.txt
 
 echo "Setting up user systemd service"
 mkdir -p ~/.config/systemd/user

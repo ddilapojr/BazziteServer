@@ -1113,7 +1113,12 @@ def get_cpu_temperature() -> Optional[float]:
                         entry.current
                     )
 
-        # AMD / generic fallback.
+        # AMD CPUs report through k10temp; Tctl is the CPU temperature.
+        for entry in temps.get("k10temp", []):
+            if entry.label == "Tctl" and entry.current is not None:
+                return float(entry.current)
+
+        # Generic fallback.
         for entries in temps.values():
             for entry in entries:
                 if entry.current is None:

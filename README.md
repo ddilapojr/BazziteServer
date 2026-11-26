@@ -4,8 +4,9 @@ A FastAPI server that integrates your Bazzite gaming PC with Home Assistant!
 
 It provides:
 
-✅ Game detection  
+✅ Game and app detection  
 ✅ CPU temperature monitoring  
+✅ Sleep & shutdown announcements to Home Assistant  
 ✅ Remote shutdown & sleep commands  
 ✅ WebSocket-based push updates
 
@@ -13,28 +14,26 @@ It provides:
 
 ## ⚡️ Quickstart (recommended)
 
-On your Bazzite PC:
+On your Bazzite PC, copy and paste:
 
 ```bash
-git clone https://github.com/Tijgerd/BazziteServer.git
-cd BazziteServer
-chmod +x install.sh
-./install.sh
+git clone https://github.com/ddilapojr/bazzite-server.git ~/BazziteServer && cd ~/BazziteServer && chmod +x install.sh && ./install.sh
 ```
 
-The installer creates a Python virtual environment, installs the dependencies, and sets up a user systemd service that starts the server.
+----
 
 After starting, the server will listen on:
-
-```
 ws://YOUR-PC-IP:5000/ws
-```
 
-Check that it's running:
+To update:
 
 ```bash
-systemctl --user status bazzite-server
-journalctl --user -u bazzite-server -f
+cd ~/BazziteServer && git pull && systemctl --user restart bazzite-server
 ```
 
-> **Note:** The server listens on all network interfaces (port 5000). Only use it on a trusted local network and don't expose it to the internet.
+---
+
+## 🙏 Credits
+
+- [Tijgerd](https://github.com/Tijgerd) created the original [Bazzite Integration Server](https://github.com/Tijgerd/BazziteServer) and [Home Assistant integration](https://github.com/Tijgerd/BazziteHaIntegration).
+- [bendamschke](https://github.com/bendamschke) contributed the added sensors.

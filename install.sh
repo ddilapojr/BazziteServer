@@ -6,6 +6,7 @@ echo "-- Bazzite Integration Server Installer --"
 
 # Ensure we are in the repo root
 cd "$(dirname "$0")"
+INSTALL_DIR="$(pwd)"
 
 echo "Creating virtual environment"
 rm -rf venv
@@ -18,7 +19,8 @@ pip install --only-binary=:all: -r requirements.txt
 
 echo "Setting up user systemd service"
 mkdir -p ~/.config/systemd/user
-cp systemd/bazzite-server.service.user ~/.config/systemd/user/bazzite-server.service
+sed "s|%h/bazzite-server|${INSTALL_DIR}|g" systemd/bazzite-server.service.user \
+  > ~/.config/systemd/user/bazzite-server.service
 
 echo "Reloading user systemd daemon"
 systemctl --user daemon-reload
